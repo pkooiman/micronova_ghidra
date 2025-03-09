@@ -1,0 +1,627 @@
+# sleigh include file for Micronova language instructions
+
+# Formats:
+# 0 0 0 .....   No accumulator-Effective address
+# 0 x x .....   One accumulator-Effective address
+# 0 1 1 .....	IO
+# 1 .........	Two Accumulator-Multiple Operation but NOT ending 1000 which would be trap
+
+#The Micronova documentation numbers the bits within a 16 bit word "backwards" (MSB is #0, LSB is #15)
+#Here we use the conventional "#0 is LSB, #15 is MSB" scheme
+
+define token instr(16)
+   #Bit 15 and 13-14 determine instruction type
+   bit_15     = (15,15)
+   bit_13_14     = (13,14)
+   
+   #Opcode bits for no accumulator-effective addres instructions  
+   opcode_0ac = (11,12)
+   
+   #Opcode bits for one accumulator-effective addres instructions  
+   opcode_1ac = (13,14)
+   
+   #Opcode bits for IO instructions
+   opcode_io = (8,10)
+   
+   #Opcode bits for two accumulator instructions  
+   opcode_2ac = (8,10)
+   
+   
+   #Control and device code bits for IO instructions
+   bits_control = (6,7)
+   bits_devcode = (0,5)
+   
+   #Bits for effective address calculations 
+   bits_indirect = (10,10)
+   bits_index = (8, 9)
+   bits_disp = (0,7) signed
+   bits_disp_abs = (0,7)
+   
+   #Accumulator for one accumulator instructions
+   ac = (11,12)
+   
+   #Source and destination accumuators for two accumulator instructions
+   acs = (13,14)
+   acd = (11,12)
+   
+   #Bits for "c sh # skip" for two accumulator instructions
+   bits_sh = (6,7)
+   bits_c = (4,5)
+   bits_store = (3,3)
+   bits_skip = (0,2)
+   
+   #Trap number for TRAP instruction
+   bits_trapno = (4,10)
+   
+;
+
+attach variables [ ac acs acd ] [ AC0 AC1 AC2 AC3 ];
+
+attach names [bits_devcode] [
+"DEV0"
+"MDV"
+"MMU"
+"MAP1"
+"HHC"
+"PROG"
+"MCAT"
+"MCAR"
+"TTI"
+"TTO"
+"PTR"
+"PTP"
+"RTC"
+"CDR"
+"LPT"
+"DSK"
+"ADCV"
+"MTA"
+"DACV"
+"DCM"
+"DEV20"
+"DEV21"
+"DEV22"
+"QTY"
+"SLA"
+"IBM1"
+"IBM2"
+"DKP"
+"CAS"
+"CRC"
+"IBP"
+"IVT"
+"DPI"
+"DPO"
+"DIO"
+"DIOT"
+"MXM"
+"DEV37"
+"MCAT1"
+"MCAR1"
+"TTI1"
+"TTO0"
+"PTR1"
+"PTP1"
+"RTC1"
+"PLT1"
+"CDR1"
+"LPT1"
+"DSK1"
+"ADCV1"
+"MTA1"
+"DACV1"
+"DEV52"
+"DEV53"
+"DEV54"
+"DEV55"
+"QTY1"
+"DEV57"
+"DEV58"
+"DKP1"
+"FPU1"
+"FPU2"
+"DEV62"
+"CPU"
+];
+
+#IO flags and pulse
+f: ""		is bits_control=0 & bits_devcode {}
+f: "S"		is bits_control=1 & bits_devcode {start_device(bits_devcode:1);}
+f: "C"		is bits_control=2 & bits_devcode {idle_device(bits_devcode:1);}
+f: "P"		is bits_control=3 & bits_devcode {pulse_device(bits_devcode:1);}
+
+
+#CPU flags and pulse
+cpuf: ""		is bits_control=0 {}
+cpuf: "S"		is bits_control=1 {interrupts_on();}
+cpuf: "C"		is bits_control=2  {interrupts_off();}
+cpuf: "P"		is bits_control=3 {}
+
+
+#IO SKIP options
+t: "BN"		is bits_control=0 & bits_devcode	{iobusy = get_io_busy(bits_devcode:1); if (iobusy) goto inst_next2;}
+t: "BZ"		is bits_control=1 & bits_devcode	{iobusy = get_io_busy(bits_devcode:1); if (!iobusy) goto inst_next2;}
+t: "DN"		is bits_control=2 & bits_devcode	{ iodone = get_io_done(bits_devcode:1); if (iodone) goto inst_next2;}
+t: "DZ"		is bits_control=3 & bits_devcode	{iodone = get_io_done(bits_devcode:1); if (!iodone) goto inst_next2;}
+
+
+#CPU SKIP options
+cput: "BN"		is bits_control=0 & bits_devcode	{intflag = get_interrupt_flag(); if (intflag) goto inst_next2;}
+cput: "BZ"		is bits_control=1 & bits_devcode	{intflag = get_interrupt_flag(); if (!intflag) goto inst_next2;}
+cput: "DN"		is bits_control=2 & bits_devcode	{}
+cput: "DZ"		is bits_control=3 & bits_devcode	{}
+
+
+
+# "csh#" for 2 accumulator ins
+#Shifter carry initializer 
+c: ""        is bits_c=0x0                              {shiftercarry = cf;}
+c: "Z"       is bits_c=0x1                              {shiftercarry = 0;}
+c: "O"       is bits_c=0x2                              {shiftercarry = 1;}
+c: "C"       is bits_c=0x3                              {shiftercarry = cf ^ 1;}
+
+#Shifter operation
+sh: ""       is bits_sh=0x0                              {}
+sh: "L"      is bits_sh=0x1                              {tmp:1 = shiftercarry; shiftercarry = SHIFTER[15,1]; SHIFTER = SHIFTER << 1; SHIFTER[0,1] = tmp[0,1];}
+sh: "R"      is bits_sh=0x2                              {tmp:1 = shiftercarry; shiftercarry = SHIFTER[0,1]; SHIFTER = SHIFTER >> 1; SHIFTER[15,1] = tmp[0,1];}
+sh: "S"      is bits_sh=0x3                              {tmp:1 = SHIFTER[0,8]; SHIFTER[0,8] = SHIFTER[8,8]; SHIFTER[8,8] = tmp;}
+
+#Store flag
+stor: ""		is bits_store=0x0 & acd							{acd = SHIFTER; cf = shiftercarry;}
+stor: "#"		is bits_store=0x1							{}
+
+
+
+
+#Skip next instruction options
+skip: ""			is bits_skip = 0x0							{}
+skip: ",SKP"		is bits_skip = 0x1							{goto inst_next2;}
+skip: ",SZC"		is bits_skip = 0x2							{if (shiftercarry == 0) goto inst_next2;}
+skip: ",SNC"		is bits_skip = 0x3							{if (shiftercarry != 0) goto inst_next2;}
+skip: ",SZR"		is bits_skip = 0x4							{if (SHIFTER == 0) goto inst_next2;}
+skip: ",SNR"		is bits_skip = 0x5							{if (SHIFTER != 0) goto inst_next2;}
+skip: ",SEZ"		is bits_skip = 0x6							{if (SHIFTER == 0 || shiftercarry == 0) goto inst_next2;}
+skip: ",SBN"		is bits_skip = 0x7							{if (SHIFTER != 0 && shiftercarry != 0) goto inst_next2;}
+
+#Effective address calculations
+#Somebody somewhere must understand the intricacies of the Sleigh "export *" statement but that someone is not me
+
+#PC relative address, export as reference
+pcreladdr: reloc 			is bits_index=1 & bits_disp [ reloc=(inst_start + bits_disp) & 0x7FFF; ]					{export *:2 reloc;}
+
+#Absolute and register-relative address, export as value
+abs_regrel_addr: bits_disp_abs is bits_index=0 & bits_disp_abs {tmp:2 = bits_disp_abs; export tmp;}
+abs_regrel_addr: "AC2"^+bits_disp			is bits_index=2 & bits_disp					{tmp:2 = (bits_disp + AC2) & 0x7FFF; export tmp;}
+abs_regrel_addr: "AC3"^+bits_disp			is bits_index=3 & bits_disp					{tmp:2 = (bits_disp + AC3) & 0x7FFF; export tmp;}
+
+
+
+macro incdec(address)
+{
+	EFFADDRESS = address;
+	dst:2 = *EFFADDRESS;
+	#addr:2 =  EFFADDRESS;
+<loop>
+	chk:2 = EFFADDRESS & 0xFFF8;
+	if (chk == 0x10)
+		goto <autoinc>;
+	if (chk == 0x18)
+		goto <autodec>;
+		
+	<checknexind>
+	indcheck:1 = dst[15,1];
+	if (indcheck == 0) goto <done>;
+	
+	EFFADDRESS = dst & 0x7FFF;
+	dst = *EFFADDRESS;
+	goto <loop>;
+	
+	<autoinc>
+		dst = dst+1;
+		*EFFADDRESS = dst;
+		goto <checknexind>;
+	<autodec>
+		dst = dst-1;
+		*EFFADDRESS  = dst;
+		goto <checknexind>;
+		
+	<done>
+}
+
+#Indirect
+ind_addr: "@"pcreladdr is pcreladdr & bits_indirect=1 
+{
+	incdec(pcreladdr);
+	tmp:2 = EFFADDRESS; 
+	export tmp;
+	
+}
+
+ind_addr: "@"abs_regrel_addr is abs_regrel_addr & bits_indirect=1 
+{
+	incdec(abs_regrel_addr);
+	tmp:2 = *EFFADDRESS;
+	export tmp;
+	
+}
+
+#################################################################
+
+macro push(ac)
+{
+	SP= SP+1; 
+	*SP=ac;
+}
+
+macro pop(ac)
+{
+	ac = *SP;
+	SP = SP - 1;
+}
+
+#############################################################################################
+#No accumulator, effective address
+with noacc_eff: bit_15=0 & bit_13_14=0 {
+	:"JMP" abs_regrel_addr is opcode_0ac=0 & bits_indirect=0 & abs_regrel_addr 
+	{
+		goto [abs_regrel_addr];
+	}
+	
+	:"JMP" pcreladdr is opcode_0ac=0 & bits_indirect=0 & pcreladdr 
+	{
+		goto pcreladdr;
+	}
+	
+	:"JMP" ind_addr is opcode_0ac=0 & bits_indirect=1 & ind_addr 
+	{
+		goto [ind_addr];
+	}
+	
+	
+	#JMP AC3+0 is return
+	:"JMP" abs_regrel_addr is opcode_0ac=0 & bits_indirect=0 & bits_index=3 & abs_regrel_addr 
+	{
+		return[abs_regrel_addr];
+	}
+	
+	
+	:"JSR" abs_regrel_addr is opcode_0ac=1 & bits_indirect=0 & abs_regrel_addr
+	{
+		call [abs_regrel_addr];
+	}
+	
+	:"JSR" pcreladdr is opcode_0ac=1 & bits_indirect=0 & pcreladdr
+	{
+		call pcreladdr;
+	}
+	
+	:"JSR" ind_addr is opcode_0ac=1 & bits_indirect=1 & ind_addr
+	{
+		call [ind_addr];
+	}
+	
+	
+	:"ISZ" abs_regrel_addr is opcode_0ac=2 & bits_indirect=0 & abs_regrel_addr 
+	{
+		
+		local tmp:2 = *abs_regrel_addr;
+		tmp = tmp + 1;
+		*abs_regrel_addr = tmp;
+		
+		if (tmp == 0) goto inst_next2;		
+	}
+	
+	:"ISZ" pcreladdr is opcode_0ac=2 & bits_indirect=0 & pcreladdr 
+	{
+		
+		local tmp:2 = pcreladdr;
+		tmp = tmp + 1;
+		pcreladdr = tmp;
+		
+		if (tmp == 0) goto inst_next2;		
+	}
+
+
+	:"ISZ" ind_addr is opcode_0ac=2 & bits_indirect=1 & ind_addr 
+	{
+		
+		local tmp:2 = *ind_addr;
+		tmp = tmp + 1;
+		*ind_addr = tmp;
+		
+		if (tmp == 0) goto inst_next2;		
+	}	
+	
+	:"DSZ" abs_regrel_addr is opcode_0ac=3 & bits_indirect=0 & abs_regrel_addr
+	{
+		
+		local tmp:2 = *abs_regrel_addr;
+		tmp = tmp - 1;
+		*abs_regrel_addr = tmp;
+		
+		if (tmp == 0) goto inst_next2;		
+	}
+	
+	:"DSZ" pcreladdr is opcode_0ac=3 & bits_indirect=0 & pcreladdr
+	{
+		
+		local tmp:2 = pcreladdr;
+		tmp = tmp - 1;
+		pcreladdr = tmp;
+		
+		if (tmp == 0) goto inst_next2;		
+	}
+	
+	:"DSZ" ind_addr is opcode_0ac=3 & bits_indirect=1 & ind_addr
+	{
+		
+		local tmp:2 = *ind_addr;
+		tmp = tmp - 1;
+		*ind_addr = tmp;
+		
+		if (tmp == 0) goto inst_next2;		
+	}
+	
+}
+
+
+#############################################################################################
+
+#############################################################################################
+#One accumulator, effective address
+with oneacc_eff: bit_15=0 { 
+	:"LDA" ac,abs_regrel_addr is opcode_1ac=1 & bits_indirect=0 & ac & abs_regrel_addr
+	{
+		
+		ac = *abs_regrel_addr;		
+	}
+	
+	
+	:"LDA" ac,pcreladdr is opcode_1ac=1 & bits_indirect=0 & ac & pcreladdr
+	{
+		
+		ac = pcreladdr;		
+	}
+	
+	:"LDA" ac,ind_addr is opcode_1ac=1 & bits_indirect=1 & ac & ind_addr
+	{
+		
+		ac = *ind_addr;		
+	}
+	
+	:"STA" ac,abs_regrel_addr is opcode_1ac=2 & bits_indirect=0 & ac & abs_regrel_addr
+	{
+		*abs_regrel_addr = ac;
+	}
+	
+	:"STA" ac,pcreladdr is opcode_1ac=2 & bits_indirect=0 & ac & pcreladdr
+	{
+		pcreladdr = ac;
+	}
+	
+	:"STA" ac,ind_addr is opcode_1ac=2 & bits_indirect=1 & ac & ind_addr
+	{
+		*ind_addr = ac;
+	}
+	
+}
+
+#############################################################################################
+
+
+
+#############################################################################################
+#Two accumulator multiple op and TRAP
+with twoacc: bit_15 = 1 {
+	:"COM"^c^sh^stor acs,acd^skip is opcode_2ac=0 & c & sh & stor & acs & acd & skip 
+	{
+		build c;
+		SHIFTER = ~acs;
+		build sh;
+		build stor;
+		build skip;
+	}
+	
+	:"NEG"^c^sh^stor acs,acd^skip is opcode_2ac=1 & c & sh & stor & acs & acd & skip 
+	{
+		build c;
+		shiftercarry = shiftercarry ^ (acs == 0);
+		SHIFTER = -acs;
+		build sh;
+		build stor;
+		build skip;
+	}
+	
+	:"MOV"^c^sh^stor acs,acd^skip is opcode_2ac=2 & c & sh & stor & acs & acd & skip
+	{
+		build c;
+		SHIFTER = acs;
+		build sh;
+		build stor;
+		build skip;
+	}
+	
+	:"INC"^c^sh^stor acs,acd^skip is opcode_2ac=3 & c & sh & stor & acs & acd & skip
+	{
+		build c;
+		shiftercarry = shiftercarry ^  (acs == 0xFFFF);
+		SHIFTER = acs + 1;
+		build sh;
+		build stor;
+		build skip;
+	}
+	
+	:"ADC"^c^sh^stor acs,acd^skip is opcode_2ac=4 & c & sh & stor & acs & acd & skip
+	{
+		build c;
+		shiftercarry = shiftercarry ^ (acs < acd);
+		SHIFTER = ~acs + acd;
+		build sh;
+		build stor;
+		build skip;
+	}
+	
+	:"SUB"^c^sh^stor acs,acd^skip is opcode_2ac=5 & c & sh & stor & acs & acd & skip
+	{
+		build c;
+		shiftercarry = shiftercarry ^ (acs <= acd);
+		SHIFTER = acd - acs;
+		build sh;
+		build stor;
+		build skip;
+	}
+	
+	:"ADD"^c^sh^stor acs,acd^skip is opcode_2ac=6 & c & sh & stor & acs & acd & skip
+	{
+		build c;
+		shiftercarry = shiftercarry ^ carry(acs,acd);
+		SHIFTER = acs + acd;
+		build sh;
+		build stor;
+		build skip;
+	}
+	
+	:"AND"^c^sh^stor acs,acd^skip is opcode_2ac=7 & c & sh & stor & acs & acd & skip
+	{
+		build c;
+		SHIFTER = acs & acd;
+		build sh;
+		build stor;
+		build skip;
+	}
+	#If indirect is set and skip is "never", the instruction is TRAP
+	:"TRAP" is bits_skip = 0 & bits_indirect = 1 {}
+}
+
+#############################################################################################
+
+
+#############################################################################################
+#Generic IO (not CPU or Stack related)
+with iodevgen: bit_13_14=3 {
+	:"NIO"^f bits_devcode is opcode_io=0 & ac=0 & f & bits_devcode  {nio(bits_devcode:1); build f;}
+	:"DIA"^f ac,bits_devcode is opcode_io=1 & f & bits_devcode & ac {ac = dia(bits_devcode:1); build f;}
+	:"DIB"^f ac,bits_devcode is opcode_io=3 & f & bits_devcode & ac {ac = dib(bits_devcode:1); build f;}
+	:"DIC"^f ac,bits_devcode is opcode_io=5 & f & bits_devcode & ac {ac = dic(bits_devcode:1); build f;}
+	:"DOA"^f ac,bits_devcode is opcode_io=2 & f & bits_devcode & ac {doa(bits_devcode:1, ac); build f;}
+	:"DOB"^f ac,bits_devcode is opcode_io=4 & f & bits_devcode & ac {dob(bits_devcode:1, ac); build f;}
+	:"DOC"^f ac,bits_devcode is opcode_io=6 & f & bits_devcode & ac {doc(bits_devcode:1, ac); build f;}
+	:"SKP"^t bits_devcode is opcode_io=7 & ac=0 & t & bits_devcode {}
+}
+#############################################################################################
+
+#############################################################################################
+#IO device 1, stack related and DIV/MUL
+with iodev1: bits_devcode=1 {
+	:"PUSHA" ac is opcode_io=3 & bits_control=0 & ac {push(ac);}
+	:"POPA" ac is opcode_io=3 & bits_control=2 & ac {pop(ac);}
+	:"SAV" is opcode_io=5 & bits_control=0 & ac=0 
+	{
+		push(AC0);
+		push(AC1);
+		push(AC2);
+		push(FP);
+		tmp:2 = AC3;
+		tmp[15,1] = cf;
+		push(tmp);
+		AC3 = SP;
+		FP = SP;		
+	}
+	
+	:"MTSP" ac is opcode_io=2 & bits_control=0 & ac {SP = ac[0,15]; }
+	:"MTFP" ac is opcode_io=0 & bits_control=0 & ac {FP = ac[0,15];}
+	:"MFSP" ac is opcode_io=2 & bits_control=2 & ac {ac=SP;}
+	:"MFFP" ac is opcode_io=0 & bits_control=2 & ac {ac=FP;}
+	:"RET" is opcode_io=5 & bits_control=2 & ac=0 
+	{
+		SP = FP;
+		tmp:2 = 0; 
+		pop(tmp);
+		cf = tmp[15,1];
+		PC = tmp[0,15];
+		pop(AC3);
+		pop(AC2);
+		pop(AC1);
+		pop(AC0);
+		goto[PC];
+	}
+	:"DIV" is opcode_io=6 & bits_control=1 & ac=2 
+	{
+		if (AC0 >= AC2) goto <ovf>;
+		tmp:4 = 0; 
+		tmp[16,16] = AC0;
+		tmp[0,16] = AC1;
+		tmp2:4 = 0;
+		tmp2[0,16] = AC2;
+		div:4 = tmp / tmp2;
+		rem:4 = tmp % tmp2;
+		AC1 = div[0,16];
+		AC0 = rem[0,16];
+		cf = 0;
+		goto <done>;
+		<ovf>
+		cf = 1;
+		<done>
+	}
+	:"MUL" is opcode_io=6 & bits_control=3 & ac=2 
+	{
+		ac0_32:4 = 0;
+		ac1_32:4 = 0;
+		ac2_32:4 = 0;
+		ac0_32[0,16] = AC0;
+		ac1_32[0,16] = AC1;
+		ac2_32[0,16] = AC2; 
+		tmp:4 = ac1_32 * ac2_32;
+		tmp = tmp + ac0_32;
+		AC0 = tmp[16,16];
+		AC1 = tmp[0,16];
+	}
+	
+	#Fallback to standard io instruction
+	:iodevgen is opcode_io & ac & bits_control & iodevgen {}
+}
+#############################################################################################
+
+#############################################################################################
+#IO device 077, CPU
+with iodev077: bits_devcode=0x3F {
+	:"INTEN" cpuf is opcode_io=0 & ac=0 & bits_control=1 & cpuf {}
+	:"INTDS" is opcode_io=0 & ac=0 & bits_control=2 {}
+	:"INTA"^cpuf ac is opcode_io=3 & ac & bits_control=0 & cpuf {ac = interrupts_ack(); build cpuf;}
+	:"MSKO"^cpuf ac is opcode_io=4 & ac & bits_control=0 & cpuf {interrupts_setmask(ac);build cpuf;}
+	:"IORST"^cpuf is opcode_io=2 & ac=0 & bits_control=0 & cpuf {ioreset(); build cpuf;}
+	:"HALT" is opcode_io=6 & ac=0 & bits_control=0  {halt();}
+	:"SKP"^cput bits_devcode is opcode_io=7 & ac=0 & cput & bits_devcode {}
+	:"RTCEN"^cpuf is opcode_io=2 & ac=2 & bits_control=0 & cpuf {rtc_enable(); build cpuf;}
+	:"RTCDS"^cpuf is opcode_io=2 & ac=1 & bits_control=0 & cpuf {rtc_disable(); build cpuf;}
+	
+	#Fallback to standard io instruction
+	:iodevgen is opcode_io & ac & bits_control & iodevgen {}
+}
+
+#############################################################################################
+
+#IO special device codes and generic
+with io: bit_15=0 & bit_13_14=3 {
+	:iodevgen is bits_devcode & iodevgen {}
+	:iodev1 is iodev1 {}
+	:iodev077 is iodev077 {}
+}
+
+
+# Formats:
+# 0 0 0 .....   No accumulator-Effective address
+# 0 x x .....   One accumulator-Effective address
+# 0 1 1 .....	IO
+# 1 .........	Two Accumulator-Multiple Operation but NOT ending 1000 which would be trap
+
+with noacc_1acc_io: bit_15=0 {
+	:noacc_eff is noacc_eff {}
+	:oneacc_eff is oneacc_eff {}
+	:io is io {}
+}
+
+#############################################################################################
+#Top level
+:^twoacc is  twoacc {} # 1 x x x .........
+:^noacc_1acc_io is noacc_1acc_io {} # 0 x x x ...........

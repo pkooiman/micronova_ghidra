@@ -1,0 +1,47 @@
+# sleigh specification file for Data General Micronova Processor
+
+define endian=big;
+define alignment=2;
+
+define space ram     type=ram_space      size=2  default wordsize=2;
+define space register type=register_space size=1;
+
+define register offset=0x00 size=2 [AC0 AC1 AC2 AC3];
+define register offset=0x40 size=2 [SP FP PC SHIFTER];
+define register offset=0x60 size=2 [EFFADDRESS];
+define register offset=0x80 size=1   [statusreg iobusy iodone intflag];
+#define register offset=0xC0 size=4   [contextreg];
+
+define bitrange cf=statusreg[0,1];
+define bitrange shiftercarry=statusreg[1,1];
+
+#define context contextreg
+	#autoinc = (0,1)
+	#autodec = (1,1)
+#;
+	
+define pcodeop get_io_busy;
+define pcodeop get_io_done;
+define pcodeop start_device;
+define pcodeop idle_device;
+define pcodeop pulse_device;
+define pcodeop nio;
+define pcodeop dia;
+define pcodeop dib;
+define pcodeop dic;
+define pcodeop doa;
+define pcodeop dob;
+define pcodeop doc;
+define pcodeop interrupts_on;
+define pcodeop interrupts_off;
+define pcodeop get_interrupt_flag;
+define pcodeop interrupts_ack;
+define pcodeop interrupts_setmask;
+define pcodeop ioreset;
+define pcodeop rtc_enable;
+define pcodeop rtc_disable;
+
+define pcodeop halt;
+
+# Include contents of skel.sinc file
+@include "micronova.sinc"
