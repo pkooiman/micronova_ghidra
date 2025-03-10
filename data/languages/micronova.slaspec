@@ -40,6 +40,7 @@ define pcodeop interrupts_setmask;
 define pcodeop ioreset;
 define pcodeop rtc_enable;
 define pcodeop rtc_disable;
+define pcodeop read_console_switches;
 
 define pcodeop halt;
 

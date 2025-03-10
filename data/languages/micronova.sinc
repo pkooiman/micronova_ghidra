@@ -589,11 +589,13 @@ with iodev077: bits_devcode=0x3F {
 	:"INTDS" is opcode_io=0 & ac=0 & bits_control=2 {}
 	:"INTA"^cpuf ac is opcode_io=3 & ac & bits_control=0 & cpuf {ac = interrupts_ack(); build cpuf;}
 	:"MSKO"^cpuf ac is opcode_io=4 & ac & bits_control=0 & cpuf {interrupts_setmask(ac);build cpuf;}
-	:"IORST"^cpuf is opcode_io=2 & ac=0 & bits_control=0 & cpuf {ioreset(); build cpuf;}
+	:"IORST" is opcode_io=2 & ac=0 & bits_control=2 & cpuf {ioreset(); build cpuf;}
 	:"HALT" is opcode_io=6 & ac=0 & bits_control=0  {halt();}
 	:"SKP"^cput bits_devcode is opcode_io=7 & ac=0 & cput & bits_devcode {}
 	:"RTCEN"^cpuf is opcode_io=2 & ac=2 & bits_control=0 & cpuf {rtc_enable(); build cpuf;}
 	:"RTCDS"^cpuf is opcode_io=2 & ac=1 & bits_control=0 & cpuf {rtc_disable(); build cpuf;}
+	
+	:"READS"^cpuf is opcode_io=1 & ac & bits_control=0 & cpuf {ac = read_console_switches(); build cpuf;}
 	
 	#Fallback to standard io instruction
 	:iodevgen is opcode_io & ac & bits_control & iodevgen {}
